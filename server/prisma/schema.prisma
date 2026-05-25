@@ -1,0 +1,120 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Domain models for the Twitter clone (User, Tweet, Like, Follow, Hashtag,
+// TweetHashtag join table, Notification). Relations, composite keys and
+// indexes are defined here. Add a raw migration to create a GIN index on
+// `Tweet.content` for full-text search as a follow-up migration.
+
+enum NotificationType {
+  LIKE
+  FOLLOW
+  REPLY
+  RETWEET
+}
+
+model User {
+  id                     String         @id @default(uuid())
+  handle                 String         @unique
+  email                  String?        @unique
+  displayName            String?
+  avatarUrl              String?
+  bio                    String?
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+
+  tweets                 Tweet[]        @relation("UserTweets")
+  likes                  Like[]
+  followers              Follow[]       @relation("UserFollowers")
+  following              Follow[]       @relation("UserFollowing")
+  notificationsSent      Notification[] @relation("ActorNotifications")
+  notificationsReceived  Notification[] @relation("RecipientNotifications")
+}
+
+model Tweet {
+  id          String   @id @default(uuid())
+  authorId    String
+  parentId    String?
+  isRetweet   Boolean  @default(false)
+  retweetOfId String?
+  content     String   @db.Text
+  createdAt   DateTime @default(now())
+  deletedAt   DateTime?
+
+  author    User     @relation("UserTweets", fields: [authorId], references: [id], onDelete: Cascade)
+  parent    Tweet?   @relation("TweetParent", fields: [parentId], references: [id])
+  children  Tweet[]  @relation("TweetParent")
+  retweetOf Tweet?   @relation("RetweetRelation", fields: [retweetOfId], references: [id])
+  retweets  Tweet[]  @relation("RetweetRelation")
+  likes     Like[]
+  hashtags  TweetHashtag[]
+
+  @@index([authorId, createdAt])
+  @@index([parentId])
+}
+
+model Like {
+  userId    String
+  tweetId   String
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tweet Tweet @relation(fields: [tweetId], references: [id], onDelete: Cascade)
+
+  @@id([userId, tweetId])
+  @@index([tweetId])
+}
+
+model Follow {
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  follower  User @relation("UserFollowing", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("UserFollowers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@id([followerId, followingId])
+  @@index([followingId])
+}
+
+model Hashtag {
+  id     String          @id @default(uuid())
+  tag    String          @unique
+  tweets TweetHashtag[]
+}
+
+model TweetHashtag {
+  tweetId   String
+  hashtagId String
+  createdAt DateTime @default(now())
+
+  tweet   Tweet   @relation(fields: [tweetId], references: [id], onDelete: Cascade)
+  hashtag Hashtag @relation(fields: [hashtagId], references: [id], onDelete: Cascade)
+
+  @@id([tweetId, hashtagId])
+  @@index([hashtagId])
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  type        NotificationType
+  recipientId String
+  actorId     String?
+  referenceId String?
+  read        Boolean          @default(false)
+  createdAt   DateTime         @default(now())
+
+  recipient User  @relation("RecipientNotifications", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor     User? @relation("ActorNotifications", fields: [actorId], references: [id], onDelete: Cascade)
+}
